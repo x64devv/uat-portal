@@ -147,10 +147,12 @@ await check('a tester cannot see the run board, the testers page or the export',
   assert.equal(r.status(), 403);
 });
 
-await check('the run board: 51 untouched, T13 failing, Ben not started', async () => {
+const STEP_COUNT = JSON.parse(require('node:fs').readFileSync(new URL('../script/steps.json', import.meta.url), 'utf8')).steps.length;
+
+await check('the run board: every step but T13 untouched, T13 failing, Ben not started', async () => {
   await admin.page.goto(`${BASE}/run`);
   const stat = async (label) => Number(await admin.page.locator(`.stat:has(.l:text-is("${label}")) .n`).innerText());
-  assert.equal(await stat('Steps nobody has run'), 51);
+  assert.equal(await stat('Steps nobody has run'), STEP_COUNT - 1);
   assert.equal(await stat('Steps failing'), 1);
   const tr = admin.page.locator('table.history tr', { hasText: BEN });
   await tr.locator('text=Not started').waitFor();

@@ -1,8 +1,9 @@
 {
-  "_about": "The ZimChoice supermarket UAT script, agreed by Wyne on 24 Sep 2026. Source: the gap analysis at https://claude.ai/code/artifact/6e2826f5-2446-4b96-b081-0b8592719481 (section 6) and bc-vantage-retail/test/TILL-PROOF-guide.md. Any step may be run by anyone on any day; the letter only says where it is done. S = setting everything up (gateway, Business Central, till), which is itself under test: a setup a tester cannot follow is a finding. Edit this file, then `npm run seed` and run supabase/seed.sql again.",
+  "_about": "The ZimChoice supermarket UAT script, agreed by Wyne on 24 Sep 2026. Source: the gap analysis at https://claude.ai/code/artifact/6e2826f5-2446-4b96-b081-0b8592719481 (section 6) and bc-vantage-retail/test/TILL-PROOF-guide.md. Any step may be run by anyone on any day; the letter only says where it is done. S = setting everything up (gateway, Business Central, till), which is itself under test: a setup a tester cannot follow is a finding. D = discounts, authored in BC, rung on the till and posted; offers are named UAT-... and shared by every tester. Edit this file, then `npm run seed` and run supabase/seed.sql again.",
   "areas": {
     "S": "Setup",
     "T": "Till",
+    "D": "Discounts",
     "B": "Business Central"
   },
   "steps": [
@@ -1068,6 +1069,435 @@
         [
           "vat",
           "VAT by band"
+        ]
+      ]
+    },
+    {
+      "id": "D1",
+      "title": "Discount accounts",
+      "do": "Vantage POS Posting Setup: tick Post Discounts to G/L and fill Line, Total, Periodic, Tender, Coupon, Manual and Customer Disc. Account with contra-revenue G/L accounts (one each, or shared, as finance wants).",
+      "expect": "Post Discounts to G/L on and every discount account filled. A blank account means that kind of discount is not posted on its own line: it disappears into revenue.",
+      "fields": [
+        [
+          "post_gl",
+          "Post Discounts to G/L (on/off)"
+        ],
+        [
+          "accounts",
+          "Line / Total / Periodic / Tender / Coupon / Manual / Customer accounts"
+        ]
+      ]
+    },
+    {
+      "id": "D2",
+      "title": "The first offer reaches the till",
+      "do": "BC, Vantage Promotion Offers: new offer UAT-20PCT, type Disc. Offer, Status Enabled, Starting Date today, Ending Date blank, Currency Code blank. Promotion Lines: Scope Item, No. = an item with a known shelf price, Discount Percent 20. Publish Rule Set (on the offer or the list), then F9 Status · Sync on the till. Then ring that item once. If another tester has already made it, check it matches and use theirs.",
+      "expect": "Vantage Promotion RuleSets has a new version with the right Offer Count. The till takes 20% off with no restart; the receipt prints UAT-20PCT and the amount under the line, and a Promotions & discounts total. Note: the receipt prints the offer No., not its Description, so the No. is what customers read.",
+      "fields": [
+        [
+          "version",
+          "Rule set version / Offer Count"
+        ],
+        [
+          "item",
+          "Item no. / shelf price"
+        ],
+        [
+          "charged",
+          "Till charged"
+        ],
+        [
+          "receipt",
+          "Receipt no."
+        ]
+      ]
+    },
+    {
+      "id": "D3",
+      "title": "An offer price",
+      "do": "Offer UAT-PRICE, Disc. Offer. Promotion Line: Scope Item, a second item, Offer Price = 1.00 below its shelf price. Publish Rule Set (on the offer or the list), then F9 Status · Sync on the till. Ring it.",
+      "expect": "The customer pays exactly the Offer Price as typed in BC, on the same basis as the shelf price (T4). Paying the offer price plus VAT is a fail: record both figures.",
+      "fields": [
+        [
+          "item",
+          "Item no. / shelf price"
+        ],
+        [
+          "offer_price",
+          "Offer Price in BC"
+        ],
+        [
+          "charged",
+          "Till charged"
+        ],
+        [
+          "receipt",
+          "Receipt no."
+        ]
+      ]
+    },
+    {
+      "id": "D4",
+      "title": "Multibuy tiers",
+      "do": "Offer UAT-MULTI, type Multibuy, one item on its Promotion Lines. Multibuy Tiers: Min. Quantity 2, Discount Percent 10; Min. Quantity 3, Deal Unit Price = a price you choose. Publish Rule Set (on the offer or the list), then F9 Status · Sync on the till. Ring 1, then 2, then 3 of the item, each as its own sale.",
+      "expect": "1: full price. 2: 10% off both. 3: every unit at the Deal Unit Price. Each discounted receipt prints UAT-MULTI.",
+      "fields": [
+        [
+          "item",
+          "Item no. / shelf price"
+        ],
+        [
+          "one",
+          "Total for 1"
+        ],
+        [
+          "two",
+          "Total for 2"
+        ],
+        [
+          "three",
+          "Total for 3"
+        ]
+      ]
+    },
+    {
+      "id": "D5",
+      "title": "Mix and match: three for two",
+      "do": "Offer UAT-3FOR2, type Mix & Match, MixMatch Disc Type Least Expensive, No. of Lines to Trigger 3, No. of Least Expensive 1, Least Expensive Percent 100. Promotion Lines: three different items (Scope Item). Publish Rule Set (on the offer or the list), then F9 Status · Sync on the till. Ring two of them; then all three; then six (two of each).",
+      "expect": "Two items: nothing off. Three: the cheapest is free. Six: the two cheapest are free.",
+      "fields": [
+        [
+          "items",
+          "Items and shelf prices"
+        ],
+        [
+          "two",
+          "Discount on 2 items"
+        ],
+        [
+          "three",
+          "Discount on 3 items"
+        ],
+        [
+          "six",
+          "Discount on 6 items"
+        ]
+      ]
+    },
+    {
+      "id": "D6",
+      "title": "A deal (bundle price)",
+      "do": "Offer UAT-DEAL, type Deal, Deal Price = less than the two items' shelf prices together. Promotion Lines: the two items (Scope Item). Publish Rule Set (on the offer or the list), then F9 Status · Sync on the till. Ring one item alone; then both; then two of each.",
+      "expect": "One item: full price. Both: the pair costs the Deal Price. Two of each: both pairs at the Deal Price.",
+      "expect_fail": "Read in the code, not yet run: a deal is applied once per sale, so the second pair is charged in full",
+      "fields": [
+        [
+          "deal_price",
+          "Deal Price in BC"
+        ],
+        [
+          "one",
+          "Total for 1 item"
+        ],
+        [
+          "pair",
+          "Total for the pair"
+        ],
+        [
+          "two_pairs",
+          "Total for two pairs"
+        ]
+      ]
+    },
+    {
+      "id": "D7",
+      "title": "Money off a big basket",
+      "do": "Offer UAT-BASKET, type Total Discount, Discount Percent 5, Amount to Trigger 50.00, Maximum Discount Amount 5.00. Publish Rule Set (on the offer or the list), then F9 Status · Sync on the till. Ring a basket just under 50.00, then one just over, then one over 100.00.",
+      "expect": "Under 50: nothing. Over 50: 5% off the basket, spread across its lines. Over 100: 5.00 exactly (the cap).",
+      "fields": [
+        [
+          "under",
+          "Under 50: total / discount"
+        ],
+        [
+          "over",
+          "Over 50: total / discount"
+        ],
+        [
+          "capped",
+          "Over 100: total / discount"
+        ]
+      ]
+    },
+    {
+      "id": "D8",
+      "title": "A discount for paying by card",
+      "do": "Offer UAT-CARD, type Tender Type, Tender Type Code = the card tender, Tender Offer Percent 2. Publish Rule Set (on the offer or the list), then F9 Status · Sync on the till. Ring the same basket twice: pay one by card, the other in cash. Run this after B5 has posted for the day (see D21).",
+      "expect": "Cash: no discount. Card: 2% off, shown before the card is charged; the terminal charges the discounted total; the fiscal slip total equals what the card paid.",
+      "fields": [
+        [
+          "cash",
+          "Cash sale total"
+        ],
+        [
+          "due",
+          "Card sale: amount due after the discount"
+        ],
+        [
+          "charged",
+          "Terminal charged"
+        ],
+        [
+          "slip",
+          "Fiscal slip total"
+        ]
+      ]
+    },
+    {
+      "id": "D9",
+      "title": "A customer's discount group",
+      "do": "Give the account customer from S18 a Customer Disc. Group. Offer UAT-CUST, type Line Discount, Customer Disc. Group = that group, Discount Percent 10, Promotion Line Scope All. Publish Rule Set (on the offer or the list), then F9 Status · Sync on the till. Ring an item with no customer; then F2, attach the customer, ring it again.",
+      "expect": "No customer: full price. With the customer: 10% off, receipt prints UAT-CUST.",
+      "fields": [
+        [
+          "group",
+          "Customer / Disc. Group"
+        ],
+        [
+          "without",
+          "Charged without the customer"
+        ],
+        [
+          "with",
+          "Charged with the customer"
+        ]
+      ]
+    },
+    {
+      "id": "D10",
+      "title": "Two offers on one item; blocking",
+      "do": "Offer UAT-30PCT: Disc. Offer, 30%, same item as UAT-20PCT, Priority 2 (give UAT-20PCT Priority 1). Publish Rule Set (on the offer or the list), then F9 Status · Sync on the till. Ring the item. Then tick Block Total Discount Offer on UAT-20PCT, publish, sync, and ring that item in a basket over 50.00 (D7).",
+      "expect": "Exactly one offer on the line: UAT-20PCT (lower Priority wins), never 30% and never 50%. With the block, the basket discount skips that line and still applies to the rest.",
+      "fields": [
+        [
+          "which",
+          "Offer applied / amount"
+        ],
+        [
+          "blocked",
+          "Basket discount on the blocked line / on the rest"
+        ]
+      ]
+    },
+    {
+      "id": "D11",
+      "title": "Offers that should not apply",
+      "do": "Offers UAT-ENDED (Ending Date yesterday), UAT-LATER (Starting Date tomorrow) and UAT-OFF (Status Disabled), each a 50% Disc. Offer on one item. Publish Rule Set (on the offer or the list), then F9 Status · Sync on the till. Ring the three items.",
+      "expect": "All three at full price.",
+      "fields": [
+        [
+          "ended",
+          "UAT-ENDED item charged"
+        ],
+        [
+          "later",
+          "UAT-LATER item charged"
+        ],
+        [
+          "off",
+          "UAT-OFF item charged"
+        ]
+      ]
+    },
+    {
+      "id": "D12",
+      "title": "A price override beats the promotion",
+      "do": "Ring the UAT-20PCT item. F11 Manager, 1 Price override, key a new price.",
+      "expect": "The keyed price stands and the promotion drops off that line; the till says a hand-keyed price is final. A cashier without Price Override needs a supervisor PIN, and the receipt shows who approved it.",
+      "fields": [
+        [
+          "keyed",
+          "Price keyed"
+        ],
+        [
+          "charged",
+          "Till charged"
+        ],
+        [
+          "approver",
+          "Approved by"
+        ]
+      ]
+    },
+    {
+      "id": "D13",
+      "title": "An item marked No Discount Allowed",
+      "do": "On the UAT-20PCT item's Item Card tick No Discount Allowed. Sync. Ring it; then F11 Manager, 2 Line discount, 10%.",
+      "expect": "No promotion on the line, and the line discount is refused with a reason.",
+      "expect_fail": "Read in the code, not yet run: the till syncs No Discount Allowed but nothing reads it, so the offer and the manual discount both apply",
+      "fields": [
+        [
+          "promo",
+          "Promotion applied? amount"
+        ],
+        [
+          "manual",
+          "What the 10% did"
+        ]
+      ]
+    },
+    {
+      "id": "D14",
+      "title": "A coupon",
+      "do": "Offer UAT-COUPON, Disc. Offer 15% on one item, Coupon Code UATCOUPON. Publish Rule Set (on the offer or the list), then F9 Status · Sync on the till. Ring the item and try to enter the coupon.",
+      "expect": "Without the coupon: full price. With it: 15% off.",
+      "expect_fail": "Read in the code, not yet run: the till has no way to enter a coupon, so a coupon offer never applies",
+      "fields": [
+        [
+          "how",
+          "How you tried to enter it"
+        ],
+        [
+          "charged",
+          "Till charged"
+        ]
+      ]
+    },
+    {
+      "id": "D15",
+      "title": "Offer limits: price group and times applicable",
+      "do": "Offer UAT-PG: Disc. Offer 25% on one item, Price Group = a group the walk-in customer is not in. Offer UAT-ONCE: Disc. Offer 25% on another item, No. of Times Applicable 1. Publish Rule Set (on the offer or the list), then F9 Status · Sync on the till. Ring the UAT-PG item with no customer; ring 3 of the UAT-ONCE item.",
+      "expect": "UAT-PG: full price. UAT-ONCE: 25% off one unit only.",
+      "expect_fail": "Read in the code, not yet run: the till ignores an offer's Price Group and No. of Times Applicable, so UAT-PG applies to everyone and UAT-ONCE to every unit",
+      "fields": [
+        [
+          "pg",
+          "UAT-PG item charged"
+        ],
+        [
+          "once",
+          "UAT-ONCE: discount on 3 units"
+        ]
+      ]
+    },
+    {
+      "id": "D16",
+      "title": "A promoted sale priced in ZWG",
+      "do": "Ring the UAT-20PCT item and one ordinary item. Press F1 to price the sale in ZWG and read the confirm before you accept.",
+      "expect": "The confirm names UAT-20PCT as no longer applying in ZWG before anything changes; after it, the sale has no discount. (A blank Currency Code means the base currency; to run an offer in ZWG, make a copy with Currency Code ZWG.)",
+      "fields": [
+        [
+          "confirm",
+          "What the confirm said"
+        ],
+        [
+          "usd",
+          "Total before (USD)"
+        ],
+        [
+          "zwg",
+          "Total after (ZWG)"
+        ]
+      ]
+    },
+    {
+      "id": "D17",
+      "title": "Return a discounted item",
+      "do": "Return one item from a D2 or D5 receipt.",
+      "expect": "The refund is what the customer paid for it, not the shelf price; the credit note shows the discount against the line.",
+      "fields": [
+        [
+          "receipt",
+          "Original receipt"
+        ],
+        [
+          "paid",
+          "Paid for the item"
+        ],
+        [
+          "refunded",
+          "Refunded"
+        ]
+      ]
+    },
+    {
+      "id": "D18",
+      "title": "Discounts on the Z",
+      "do": "Cut the Z on a till that sold discounted items (T26).",
+      "expect": "The Z has a discounts section whose total equals the Promotions & discounts on that shift's receipts.",
+      "fields": [
+        [
+          "z",
+          "Z no."
+        ],
+        [
+          "z_total",
+          "Discounts on the Z"
+        ],
+        [
+          "receipts_total",
+          "Sum from the receipts"
+        ]
+      ]
+    },
+    {
+      "id": "D19",
+      "title": "Discount entries in BC",
+      "do": "Vantage Trans. Disc. Entries, filtered to the D receipts.",
+      "expect": "One entry per discount on each line, with the Discount Type (DISC_OFFER, MULTIBUY, MIX_MATCH, DEAL, TOTAL_DISCOUNT, LINE_DISCOUNT, MANUAL, TENDER_TYPE) and offer No., amounts matching the receipts.",
+      "fields": [
+        [
+          "checked",
+          "Receipts checked"
+        ],
+        [
+          "mismatch",
+          "Any mismatch"
+        ]
+      ]
+    },
+    {
+      "id": "D20",
+      "title": "Discounts post to their accounts",
+      "do": "Calculate and post the statement for a day with D2 to D7 sales and no card discount (B4, B5). Look at the G/L entries.",
+      "expect": "Each kind of discount on its own account from D1; revenue plus discounts equals the shelf value; posted VAT equals the fiscal VAT; the statement's Rounding Amount is cents at most.",
+      "fields": [
+        [
+          "statement",
+          "Statement no."
+        ],
+        [
+          "discounts",
+          "Amount per discount account"
+        ],
+        [
+          "rounding",
+          "Rounding Amount"
+        ]
+      ]
+    },
+    {
+      "id": "D21",
+      "title": "A card discount posts",
+      "do": "Calculate and post the statement for the day of the D8 card sale.",
+      "expect": "It posts, with the card discount on Tender Disc. Account.",
+      "expect_fail": "Read in the code, not yet run: a tender discount belongs to no sales line and posting only posts discounts that do, so the statement is out by the discount: it refuses to post above Max. Rounding Amount, otherwise the discount lands in the Rounding Account",
+      "fields": [
+        [
+          "statement",
+          "Statement no."
+        ],
+        [
+          "result",
+          "Posted, or the error"
+        ],
+        [
+          "tender_acc",
+          "Amount on Tender Disc. Account"
+        ],
+        [
+          "rounding",
+          "Rounding Amount"
         ]
       ]
     },
