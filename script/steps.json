@@ -1,7 +1,8 @@
 {
-  "_about": "The ZimChoice supermarket UAT script, agreed by Wyne on 24 Sep 2026. Source: the gap analysis at https://claude.ai/code/artifact/6e2826f5-2446-4b96-b081-0b8592719481 (section 6) and bc-vantage-retail/test/TILL-PROOF-guide.md. Any step may be run by anyone on any day; the letter only says where it is done. S = setting everything up (gateway, Business Central, till), which is itself under test: a setup a tester cannot follow is a finding. D = discounts, authored in BC, rung on the till and posted; offers are named UAT-... and shared by every tester. Edit this file, then `npm run seed` and run supabase/seed.sql again.",
+  "_about": "The ZimChoice supermarket UAT script, agreed by Wyne on 24 Sep 2026. Source: the gap analysis at https://claude.ai/code/artifact/6e2826f5-2446-4b96-b081-0b8592719481 (section 6) and bc-vantage-retail/test/TILL-PROOF-guide.md. Any step may be run by anyone on any day; the letter only says where it is done. S = setting everything up (gateway, Business Central, till), which is itself under test: a setup a tester cannot follow is a finding. C = the setup exercised: store creation, functionality profiles and posting setup changed in BC and proved at the till or in posting; test profiles and stores are named UAT-... / UAT2. D = discounts, authored in BC, rung on the till and posted; offers are named UAT-... and shared by every tester. Edit this file, then `npm run seed` and run supabase/seed.sql again.",
   "areas": {
     "S": "Setup",
+    "C": "Setup, exercised",
     "T": "Till",
     "D": "Discounts",
     "B": "Business Central"
@@ -363,8 +364,8 @@
     {
       "id": "S18",
       "title": "Account customers and live stock",
-      "do": "Customers for the on-account steps: not blocked, with a credit limit. If Live Stock Posting is on: a Job Queue Entry for codeunit 50802. Inventory Setup: Prevent Negative Inventory.",
-      "expect": "At least one account customer with a limit. The job queue entry exists and is Ready (or Live Stock Posting is off).",
+      "do": "Customers for the on-account steps: not blocked, with a credit limit. If Live Stock Posting is on: a Job Queue Entry for codeunit 50802 (Vantage Live Stock Job). Inventory Setup: Prevent Negative Inventory.",
+      "expect": "At least one account customer with a limit. The job queue entry runs 50802, not 50800 (50800 logs Success and posts nothing), and is Ready (or Live Stock Posting is off).",
       "closes": "VPOS-27, VPOS-32",
       "fields": [
         [
@@ -505,6 +506,298 @@
         [
           "card",
           "Card link status"
+        ]
+      ]
+    },
+    {
+      "id": "C1",
+      "title": "Create a store from nothing",
+      "do": "Vantage Stores, New: store UAT2 with Name, Address, City, Phone, Store Type, Location Code, Store Dimension Value, Currency Code, VAT Bus. Posting Group, Func. Profile, Hardware Profile, TIN No., VAT Registration No. Under it (Store Terminals) add one terminal with no profiles of its own. On a spare till (or yours, then put it back), Lane setup: choose UAT2 and its terminal, save, F9 Status · Sync on the till, sign in and sell one item.",
+      "expect": "Lane setup lists UAT2 and its terminal. The receipt header prints UAT2's name, address, phone, TIN and VAT no. The sale lands in BC under store UAT2 and that terminal.",
+      "fields": [
+        [
+          "store",
+          "Store no. / terminal no."
+        ],
+        [
+          "header",
+          "Receipt header as printed"
+        ],
+        [
+          "bc",
+          "Transaction no. in BC"
+        ]
+      ]
+    },
+    {
+      "id": "C2",
+      "title": "The store's location and VAT group reach posting",
+      "do": "Post the UAT2 sale (live stock or the statement). Look at its Item Ledger Entry and its VAT Entry. Then blank UAT2's Location Code, sell again, post, and look again.",
+      "expect": "With a Location Code: the stock leaves UAT2's location. Blank: it leaves Vantage POS Posting Setup's Default Location Code. The VAT entry carries UAT2's VAT Bus. Posting Group (the setup's Default VAT Bus. Posting Group only when the store has none).",
+      "fields": [
+        [
+          "loc_set",
+          "Location on the ledger (store location set)"
+        ],
+        [
+          "loc_blank",
+          "Location on the ledger (store location blank)"
+        ],
+        [
+          "vat_bus",
+          "VAT Bus. Posting Group on the VAT entry"
+        ]
+      ]
+    },
+    {
+      "id": "C3",
+      "title": "The store dimension",
+      "do": "Vantage POS Posting Setup: Store Dimension Code set. Blank UAT2's Store Dimension Value and calculate, then post, a statement for UAT2. Then fill it and post again.",
+      "expect": "Blank: the statement refuses, naming store UAT2 and the dimension. Filled: every revenue, VAT, tender and stock G/L entry of UAT2 carries that dimension value, and store 5001's entries carry 5001's.",
+      "fields": [
+        [
+          "refusal",
+          "Refusal text"
+        ],
+        [
+          "dim",
+          "Dimension value on the G/L entries"
+        ]
+      ]
+    },
+    {
+      "id": "C4",
+      "title": "A blocked terminal and a blocked store",
+      "do": "Tick Blocked on UAT2's terminal, F9 Status · Sync on the till, try to sell. Untick it, tick Blocked on store UAT2, sync, try again. Untick it.",
+      "expect": "Each time the till refuses to sell and says the terminal (or store) is blocked in Business Central.",
+      "expect_fail": "Read in the code, not yet run: the till syncs and stores this setting but nothing reads it (Blocked on the store and on the terminal): the till keeps selling",
+      "fields": [
+        [
+          "terminal",
+          "Blocked terminal: what the till did"
+        ],
+        [
+          "store",
+          "Blocked store: what the till did"
+        ]
+      ]
+    },
+    {
+      "id": "C5",
+      "title": "A terminal's own profile beats the store's",
+      "do": "Copy the store's functionality profile to UAT-ALT and change one thing the till reads: untick Customer Account Enabled. Put UAT-ALT on one terminal only (Func. Profile Code on the terminal card). F9 Status · Sync on the till on that till and on a till still on the store's profile. On each, look for F2 Customer, then attach an account customer and try to pay on account.",
+      "expect": "The UAT-ALT till has no F2 Customer key (unless Hire-to-Buy or Lay-By is on in UAT-ALT) and offers no on-account tender; the other till works as in T21. Put the terminal's profile back afterwards.",
+      "fields": [
+        [
+          "alt",
+          "Till on UAT-ALT: F2 shown? on-account offered?"
+        ],
+        [
+          "store",
+          "Till on the store's profile: same"
+        ]
+      ]
+    },
+    {
+      "id": "C6",
+      "title": "Max Drawer Hours",
+      "do": "On UAT-ALT set Max Drawer Hours = 1 and sync. Open a shift and sell. Come back more than an hour later and sell again.",
+      "expect": "After the hour the till refuses the sale, says the drawer is stale, and F11 then 6 End of day still works so the Z can be cut. With 0 there is no limit.",
+      "fields": [
+        [
+          "opened",
+          "Shift opened at"
+        ],
+        [
+          "refused",
+          "Refused at / message"
+        ],
+        [
+          "z",
+          "Z cut? (yes/no)"
+        ]
+      ]
+    },
+    {
+      "id": "C7",
+      "title": "Dual pricing on and off",
+      "do": "On UAT-ALT untick Dual Pricing Enabled, sync, ring an item. Tick it with Secondary Currency Code ZWG, sync, ring it again.",
+      "expect": "Off: no F1 key and no second-currency figures on screen or receipt. On: F1 prices the sale in ZWG and the receipt shows the ZWG total.",
+      "fields": [
+        [
+          "off",
+          "Dual pricing off: what showed"
+        ],
+        [
+          "on",
+          "Dual pricing on: what showed"
+        ]
+      ]
+    },
+    {
+      "id": "C8",
+      "title": "Amount rounding",
+      "do": "On a tender and currency with no rounding of their own, set the profile's Amount Rounding Method Nearest and Amount Rounding To 0.05. Sync. Ring a basket ending in .03 and pay it with that tender.",
+      "expect": "The amount due rounds to .05 and the rounding shows on the receipt. Record the tender used.",
+      "fields": [
+        [
+          "tender",
+          "Tender used"
+        ],
+        [
+          "basket",
+          "Basket total"
+        ],
+        [
+          "due",
+          "Amount due / rounding"
+        ]
+      ]
+    },
+    {
+      "id": "C9",
+      "title": "Max. Quantity and Max. Price",
+      "do": "On UAT-ALT set Max. Quantity 50 and Max. Price 500.00. Sync. Key a quantity of 99 on a line; open a price override and key 900.00.",
+      "expect": "Both refused, with the limit named.",
+      "expect_fail": "Read in the code, not yet run: the till syncs and stores this setting but nothing reads it: 99 and 900.00 are both taken",
+      "fields": [
+        [
+          "qty",
+          "What quantity 99 did"
+        ],
+        [
+          "price",
+          "What price 900.00 did"
+        ]
+      ]
+    },
+    {
+      "id": "C10",
+      "title": "Staff PIN Logon and Staff Barcode Logon",
+      "do": "On UAT-ALT untick Staff PIN Logon and tick Staff Barcode Logon. Sync. Sign out and sign in.",
+      "expect": "The sign-in asks for a staff barcode, not a PIN.",
+      "expect_fail": "Read in the code, not yet run: the till syncs and stores this setting but nothing reads it: the sign-in asks for a PIN either way",
+      "fields": [
+        [
+          "signin",
+          "What the sign-in asked for"
+        ]
+      ]
+    },
+    {
+      "id": "C11",
+      "title": "Prices Include VAT and Show VAT on Receipt",
+      "do": "Note an item's BC Unit Price and what the till charges (T4). On UAT-ALT untick Prices Include VAT and Show VAT on Receipt. Sync, ring the item again.",
+      "expect": "The till now adds VAT on top of the Unit Price, and the receipt has no VAT section. Tick both back afterwards.",
+      "expect_fail": "Read in the code, not yet run: the till syncs and stores this setting but nothing reads it (both settings, and Currency Symbol and Price Rounding): the price and the receipt do not change",
+      "fields": [
+        [
+          "before",
+          "Charged before"
+        ],
+        [
+          "after",
+          "Charged after"
+        ],
+        [
+          "vat_line",
+          "VAT section on the receipt after? (yes/no)"
+        ]
+      ]
+    },
+    {
+      "id": "C12",
+      "title": "Every item's posting groups resolve",
+      "do": "List the Gen. Prod. Posting Groups on the ZimChoice items. In General Posting Setup check two rows for each: blank Gen. Bus. + the group (Inventory Adjmt. Account), and Vantage POS Posting Setup's Default Gen. Bus. Post. Group + the group (Sales Account, COGS Account, Inventory Adjmt. Account). Check every item has a VAT Prod. Posting Group. Then Adjust Inventory one item of each group, and sell and post one of each.",
+      "expect": "No missing row. Adjust Inventory works (a missing blank + group row gives 'The General Posting Setup does not exist', as on item 4096 on 24 Sep). The sales post revenue and COGS under the default business group.",
+      "fields": [
+        [
+          "groups",
+          "Gen. Prod. groups used"
+        ],
+        [
+          "missing",
+          "Rows that were missing"
+        ],
+        [
+          "no_vat",
+          "Items with no VAT Prod. group"
+        ]
+      ]
+    },
+    {
+      "id": "C13",
+      "title": "Live stock posting",
+      "do": "Job queue entry: Object ID to Run 50802 (Vantage Live Stock Job), 1 minute between runs, Ready. Live Stock Posting on in the profile. Sell an item with stock; wait 2 minutes; open its Item Ledger Entries. Then sell an item whose posting fails (for example one with no General Posting Setup row, or no stock with Prevent Negative Inventory on).",
+      "expect": "The good sale is on the item ledger within about two minutes, before any statement. The bad one shows on Vantage Live Stock Worklist with its error while the job log still says Success; once fixed it posts on the next run (or with the statement). An entry on 50800 logs Success and posts nothing.",
+      "fields": [
+        [
+          "minutes",
+          "Minutes from sale to ledger"
+        ],
+        [
+          "worklist",
+          "Worklist error for the bad line"
+        ],
+        [
+          "after_fix",
+          "Posted after the fix? (yes/no)"
+        ]
+      ]
+    },
+    {
+      "id": "C14",
+      "title": "Statement numbers, journals and source code",
+      "do": "After B5, open the posted statement and its G/L entries.",
+      "expect": "The statement number comes from Statement Nos.; the G/L entries' document no. from Posting Nos. (when set); Source Code as set; posted through the Gen. Journal template and batch from the setup. Cash takings post to the cash tender's own Account No. (the setup's Cash Account No. is not used by posting).",
+      "fields": [
+        [
+          "statement",
+          "Statement no."
+        ],
+        [
+          "doc",
+          "G/L document no."
+        ],
+        [
+          "source",
+          "Source code on the entries"
+        ]
+      ]
+    },
+    {
+      "id": "C15",
+      "title": "Cash movements post to their accounts",
+      "do": "Post a statement for a day with a pickup, a safe drop, a float add and a payout (T24). Then blank Safe Account No., calculate a statement with a safe drop and post it; do the same with Cash in Transit Acc. and a pickup. Put both back.",
+      "expect": "Pickup to Cash in Transit Acc., safe drop to Safe Account No., payout to its reason's G/L account. With an account blank, posting refuses and names the missing account and the movement.",
+      "fields": [
+        [
+          "accounts",
+          "Account hit by each movement"
+        ],
+        [
+          "safe_refusal",
+          "Refusal with Safe Account blank"
+        ],
+        [
+          "transit_refusal",
+          "Refusal with Cash in Transit blank"
+        ]
+      ]
+    },
+    {
+      "id": "C16",
+      "title": "Cash difference over the limit",
+      "do": "Set Max. Cash Difference 1.00. Declare a drawer 5.00 short at the Z. Post the statement; then, on the statement's Cash Drawers, Accept Cash Difference and post again.",
+      "expect": "The first post refuses, naming the terminal, the difference and the limit. After acceptance it posts: the 5.00 to Cash Difference Acc. against the cash tender account.",
+      "fields": [
+        [
+          "refusal",
+          "Refusal text"
+        ],
+        [
+          "posted",
+          "Cash Difference Acc. amount"
         ]
       ]
     },
