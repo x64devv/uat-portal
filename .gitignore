@@ -1,0 +1,19 @@
+# ⚠⚠ .env.local holds the Meta access token and the Supabase service-role key. Either one, in a
+# public repo, is a stranger sending WhatsApp messages as Total Retail ZW or reading the whole
+# template table. This line is the only thing standing between a `git add .` and that.
+.env
+.env.local
+.env*.local
+
+node_modules/
+.next/
+out/
+build/
+dist/
+
+*.tsbuildinfo
+.vercel
+
+.DS_Store
+*.log
+npm-debug.log*
