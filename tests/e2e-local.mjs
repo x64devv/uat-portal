@@ -78,7 +78,7 @@ const admin = await signIn(browser, ADMIN);
 await check('admin lands on the script with every step listed', async () => {
   await admin.page.goto(`${BASE}/`);
   await admin.page.waitForSelector('h1:has-text("Supermarket test script")');
-  assert.equal(await admin.page.locator('a.step').count(), 52);
+  assert.equal(await admin.page.locator('a.step').count(), JSON.parse(require('node:fs').readFileSync(new URL('../script/steps.json', import.meta.url), 'utf8')).steps.length);
 });
 
 await check('admin adds two testers', async () => {

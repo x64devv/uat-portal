@@ -5,14 +5,14 @@ under the tester's name and the time. Next.js 14 (App Router) · Supabase · dep
 the same shape as `wa-portal`.
 
 **Agreed 24 Sep 2026:** everyone tests everything; anyone may run any step on any day; one account
-per person, added by an administrator on the Testers page. The script is the 52 steps from §6 of
+per person, added by an administrator on the Testers page. The script is the steps from §6 of
 the gap analysis (https://claude.ai/code/artifact/6e2826f5-2446-4b96-b081-0b8592719481).
 
 ## What it does
 
 | Page | Who | What |
 |---|---|---|
-| Script `/` | everyone | All 52 steps, your latest answer and everyone's state beside each |
+| Script `/` | everyone | All the steps, your latest answer and everyone's state beside each |
 | Step `/steps/T14` | everyone | Do / Expect / Record; your result form; everyone's results, newest first, with screenshots |
 | My progress `/mine` | everyone | What you have not started, marked not run, and done |
 | Run board `/run` | admin | Steps nobody has run (first), failing, blocked, testers' progress, a tester × step matrix, CSV export |

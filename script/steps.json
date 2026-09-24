@@ -1,305 +1,1251 @@
 {
-  "_about": "The ZimChoice supermarket UAT script, agreed by Wyne on 24 Sep 2026. Source: the gap analysis at https://claude.ai/code/artifact/6e2826f5-2446-4b96-b081-0b8592719481 (section 6) and bc-vantage-retail/test/TILL-PROOF-guide.md. Any step may be run by anyone on any day; the letter only says where it is done. Edit this file, then `npm run seed` and run supabase/seed.sql again.",
+  "_about": "The ZimChoice supermarket UAT script, agreed by Wyne on 24 Sep 2026. Source: the gap analysis at https://claude.ai/code/artifact/6e2826f5-2446-4b96-b081-0b8592719481 (section 6) and bc-vantage-retail/test/TILL-PROOF-guide.md. Any step may be run by anyone on any day; the letter only says where it is done. S = setting everything up (gateway, Business Central, till), which is itself under test: a setup a tester cannot follow is a finding. Edit this file, then `npm run seed` and run supabase/seed.sql again.",
   "areas": {
-    "P": "Business Central setup",
+    "S": "Setup",
     "T": "Till",
     "B": "Business Central"
   },
   "steps": [
-    { "id": "P1", "title": "No till has a shift left open from an earlier day",
-      "do": "On each tester's till, look at the open shift. If one is open from an earlier day, the till refuses to sell. Cut its Z: F11 → 6 with an empty basket. If F11 is greyed out, raise Max Drawer Hours on the functionality profile in BC, sync the till, cut the Z, then set it back to 16.",
-      "expect": "Every till starts the UAT with no shift, or a shift opened today.",
-      "closes": "VPOS-63", "expect_fail": "G5 (VPOS-94): a stale drawer cannot reach End of day",
-      "fields": [["terminal", "Terminal no."], ["shift_found", "Shift found open (no. and date)"], ["action", "What you did"]] },
-
-    { "id": "P2", "title": "Price basis for two shelf-priced items",
-      "do": "Pick two items with a price you can see on the shelf. In BC, open each item and note its Unit Price and whether prices include VAT.",
-      "expect": "You know, for each item, what the customer should pay. T4 then checks the till charges exactly that.",
-      "closes": "U1 (VPOS-112)",
-      "fields": [["item1", "Item 1 no."], ["item1_shelf", "Item 1 shelf price"], ["item1_bc", "Item 1 BC Unit Price"], ["item2", "Item 2 no."], ["item2_shelf", "Item 2 shelf price"], ["item2_bc", "Item 2 BC Unit Price"], ["incl_vat", "Prices include VAT? (as set in BC)"]] },
-
-    { "id": "P3", "title": "Is the ZWG statement fix in this build?",
-      "do": "Check VPOS-90 (G1) on VTracker and the build installed on the tills.",
-      "expect": "Recorded, so B4 and B5 can be read correctly. Until G1 is fixed, a statement holding a ZWG-notes sale will not balance.",
-      "closes": "VPOS-90",
-      "fields": [["build", "Build / version on the tills"], ["g1_fixed", "G1 fixed in this build? (yes/no)"]] },
-
-    { "id": "P4", "title": "Overtender allowed on both cash tenders",
-      "do": "Vantage Tender Types → CASH_USD and CASH_ZWG → Overtender Allowed.",
-      "expect": "On for both. Without it no cashier can give change.",
-      "fields": [["usd_found", "CASH_USD value found"], ["usd_after", "CASH_USD value after"], ["zwg_found", "CASH_ZWG value found"], ["zwg_after", "CASH_ZWG value after"]] },
-
-    { "id": "P5", "title": "Is the USD drawer fix in this build?",
-      "do": "Check VPOS-92 (G3) and VPOS-93 (G4) on VTracker against the build installed on the tills.",
-      "expect": "Recorded, so T1 and T26 can be read correctly. Until fixed, the till asks for a ZWG float only and never counts the USD drawer at close.",
-      "closes": "VPOS-92, VPOS-93",
-      "fields": [["g3_fixed", "G3 fixed? (yes/no)"], ["g4_fixed", "G4 fixed? (yes/no)"]] },
-
-    { "id": "P6", "title": "Staff for every tester, and a manager on each till",
-      "do": "Staff list for store 5001. Each tester needs their own staff record and PIN. Each till needs at least one cashier and one manager (Manager Privileges) for the supervisor steps.",
-      "expect": "Distinct PINs. BC refuses two people in one store sharing a PIN.",
-      "closes": "VPOS-65",
-      "fields": [["cashiers", "Cashier staff ids"], ["managers", "Manager staff ids"]] },
-
-    { "id": "P7", "title": "Vantage Tax Mappings for LOCAL",
-      "do": "Vantage Tax Mappings, VAT Bus. Posting Group LOCAL. For each product group note the ZIMRA tax id, tax code letter and percent. (ZimChoice's store group is LOCAL, not DOMESTIC.)",
-      "expect": "STD155 = 517, 15.5%. The letter E makes the till declare a band as exempt (no percent). T6 shows what the slip actually declares.",
+    {
+      "id": "S1",
+      "title": "Install the gateway",
+      "do": "Run vantage-gateway-<version>.msi on the gateway machine as an administrator. Leave the last screen's box ticked for S2.",
+      "expect": "It installs without asking for Java. Services shows Vantage Sync Gateway. Start menu has Vantage > Configure Vantage Sync Gateway.",
+      "fields": [
+        [
+          "version",
+          "MSI version"
+        ],
+        [
+          "machine",
+          "Machine"
+        ],
+        [
+          "service",
+          "Service present? (yes/no)"
+        ],
+        [
+          "shortcut",
+          "Start-menu entry present? (yes/no)"
+        ]
+      ]
+    },
+    {
+      "id": "S2",
+      "title": "Give the gateway its application.yml",
+      "do": "On the installer's last screen press Finish with the box ticked (or use the Start-menu entry). Pick the prepared application.yml and approve the administrator prompt.",
+      "expect": "The file is copied to C:\\ProgramData\\Vantage\\gateway, the service restarts, and a message says /health answered.",
+      "fields": [
+        [
+          "message",
+          "Message shown"
+        ],
+        [
+          "port",
+          "Port"
+        ],
+        [
+          "backup",
+          "Previous file kept as .bak? (yes/no/n.a.)"
+        ]
+      ]
+    },
+    {
+      "id": "S3",
+      "title": "The gateway refuses the wrong file",
+      "do": "Run Configure Vantage Sync Gateway again and pick a till's lane.properties, then a copy of application.yml.example.",
+      "expect": "Both are refused by name and nothing changes: the first has no bc:/gateway: sections, the second has the placeholder key.",
+      "fields": [
+        [
+          "lane_msg",
+          "Message for lane.properties"
+        ],
+        [
+          "example_msg",
+          "Message for the example file"
+        ]
+      ]
+    },
+    {
+      "id": "S4",
+      "title": "The gateway reaches Business Central",
+      "do": "In PowerShell: Invoke-RestMethod http://localhost:<port>/api/bc/handshake -Headers @{ 'X-Gateway-Api-Key' = '<key>' }",
+      "expect": "The company list comes back and includes ZimChoice Supermarkets.",
+      "fields": [
+        [
+          "companies",
+          "Companies returned"
+        ]
+      ]
+    },
+    {
+      "id": "S5",
+      "title": "ZWG as a POS currency",
+      "do": "Business Central: Currencies > ZWG > Vantage POS: POS Currency, Lowest Denomination. Currency Exchange Rates: a ZWG rate starting today.",
+      "expect": "POS Currency ticked, Lowest Denomination 0.10, a rate dated today.",
+      "closes": "VPOS-86, VPOS-81",
+      "fields": [
+        [
+          "pos_currency",
+          "POS Currency"
+        ],
+        [
+          "lowest",
+          "Lowest Denomination"
+        ],
+        [
+          "rate",
+          "Rate and starting date"
+        ]
+      ]
+    },
+    {
+      "id": "S6",
+      "title": "VAT posting and ZIMRA tax mappings",
+      "do": "VAT Posting Setup: the rows for the store's group (LOCAL) and each item VAT group. Vantage Tax Code Mappings: the LOCAL rows.",
+      "expect": "LOCAL x STD155 is 15.5% and maps to tax id 517. Every VAT group the catalogue uses has a mapping. The letter E is used only for exempt.",
       "closes": "G7 (VPOS-96)",
-      "fields": [["std155", "STD155: id / letter / %"], ["zero", "ZERO: id / letter / %"], ["notax", "NO TAX: id / letter / %"], ["exempt", "EXEMPT: id / letter / % (or none)"]] },
-
-    { "id": "P8", "title": "Every till is commissioned to store 5001",
-      "do": "Start each till from the installed app, not from the repo folder, and read the store and terminal on its header.",
-      "expect": "Store 5001 and that till's own terminal number. The repo's lane.properties would make it 1001 / 100101.",
-      "closes": "G21 (VPOS-110)",
-      "fields": [["tills", "Terminals and the store each shows"]] },
-
-    { "id": "P9", "title": "The drawer opens on a cash sale",
-      "do": "Hardware profile used by the tills → Open Drawer on Sale.",
-      "expect": "On. Off, the drawer never opens on a sale.",
-      "fields": [["found", "Value found"], ["after", "Value after"]] },
-
-    { "id": "P10", "title": "Smallest note and coin",
-      "do": "Currency ZWG → Vantage POS → Lowest Denomination. Vantage Tender Type CASH_USD → Rounding To.",
-      "expect": "ZWG 0.10. CASH_USD 0.05 only if the store gives coin change; otherwise leave 0.01 and mark T13's rounding figure as 0.",
-      "closes": "VPOS-81",
-      "fields": [["zwg_found", "ZWG found"], ["zwg_after", "ZWG after"], ["usd_rounding", "CASH_USD Rounding To"]] },
-
-    { "id": "P11", "title": "Cash movement reasons with a G/L account",
-      "do": "Vantage cash movement reasons: at least two payout reasons, each with a G/L account.",
-      "expect": "The till only offers reasons that have an account. With none, every payout is refused.",
+      "fields": [
+        [
+          "std155",
+          "STD155: VAT % / tax id / letter"
+        ],
+        [
+          "zero",
+          "ZERO: VAT % / tax id / letter"
+        ],
+        [
+          "exempt",
+          "EXEMPT: VAT % / tax id / letter"
+        ],
+        [
+          "notax",
+          "NO TAX: VAT % / tax id / letter"
+        ]
+      ]
+    },
+    {
+      "id": "S7",
+      "title": "Tender types",
+      "do": "Vantage Tender Types: CASH_USD, CASH_ZWG, the card tender and CUSTOMER. For each: Account No., Overtender Allowed, Change Tender Code, Rounding To, Drawer Opens. CASH_ZWG also: Currency Code ZWG, Foreign Currency ticked, Seek Authorization None.",
+      "expect": "Every tender has an account. Both cash tenders allow overtender (or change can never be given). CASH_ZWG is ZWG drawer cash.",
+      "closes": "VPOS-79, VPOS-80",
+      "fields": [
+        [
+          "cash_usd",
+          "CASH_USD: account / overtender / rounding"
+        ],
+        [
+          "cash_zwg",
+          "CASH_ZWG: account / overtender / currency / seek auth."
+        ],
+        [
+          "card",
+          "Card tender: account / seek auth."
+        ],
+        [
+          "customer",
+          "CUSTOMER: account"
+        ]
+      ]
+    },
+    {
+      "id": "S8",
+      "title": "Functionality profile",
+      "do": "Vantage POS Func. Profiles > DEFAULT (or the store's): Prices Include VAT, Staff PIN Logon, Customer Account Enabled, Dual Pricing Enabled and Secondary Currency Code, Max Drawer Hours, Live Stock Posting, Must Key Price if Zero, Max. Quantity, Max. Price.",
+      "expect": "Values match what the supermarket day needs. Record what you set, including anything left off.",
+      "fields": [
+        [
+          "incl_vat",
+          "Prices Include VAT"
+        ],
+        [
+          "account",
+          "Customer Account Enabled"
+        ],
+        [
+          "dual",
+          "Dual Pricing Enabled / Secondary Currency"
+        ],
+        [
+          "drawer_hours",
+          "Max Drawer Hours"
+        ],
+        [
+          "live_stock",
+          "Live Stock Posting"
+        ],
+        [
+          "key_zero",
+          "Must Key Price if Zero"
+        ]
+      ]
+    },
+    {
+      "id": "S9",
+      "title": "Hardware profile",
+      "do": "Vantage POS HW Profiles > the store's profile: Receipt Printer Type and Address, Receipt Width, Cash Drawer Port, Open Drawer on Sale, Scale Enabled and Port, EFT Endpoint URL, FDMS Endpoint URL.",
+      "expect": "Open Drawer on Sale ticked. Endpoints filled for what this store uses. No device keys here - they live in each till's lane.properties.",
+      "fields": [
+        [
+          "printer",
+          "Printer type / address / width"
+        ],
+        [
+          "drawer",
+          "Drawer port / Open Drawer on Sale"
+        ],
+        [
+          "scale",
+          "Scale enabled / port"
+        ],
+        [
+          "eft",
+          "EFT endpoint"
+        ],
+        [
+          "fdms",
+          "FDMS endpoint"
+        ]
+      ]
+    },
+    {
+      "id": "S10",
+      "title": "The store",
+      "do": "Vantage Stores > 5001: Location Code, Currency Code (blank = LCY), Func./Hardware/Menu Profile Code, VAT Bus. Posting Group, VAT Registration No., TIN No., Store Dimension Value.",
+      "expect": "VAT Bus. Posting Group is LOCAL (blank sells everything at 0%). TIN and VAT number filled so they print on the slip.",
+      "expect_fail": "G20 (VPOS-109): TIN and VAT no. were blank on 24 Sep",
+      "fields": [
+        [
+          "location",
+          "Location Code"
+        ],
+        [
+          "vat_group",
+          "VAT Bus. Posting Group"
+        ],
+        [
+          "tin",
+          "TIN No."
+        ],
+        [
+          "vat_no",
+          "VAT Registration No."
+        ],
+        [
+          "profiles",
+          "Func. / HW / Menu profile"
+        ]
+      ]
+    },
+    {
+      "id": "S11",
+      "title": "A terminal for every tester's till",
+      "do": "Store card 5001 > POS Terminals: one line per till. Terminal Type Till; leave the profile codes blank to inherit the store's; Auto Logoff After (Min.).",
+      "expect": "One terminal per tester's till, each a distinct number.",
+      "fields": [
+        [
+          "terminals",
+          "Terminal numbers and who uses each"
+        ]
+      ]
+    },
+    {
+      "id": "S12",
+      "title": "Staff permission groups",
+      "do": "Vantage Staff Perm. Groups: a cashier group and a manager group. Manager: Manager Privileges, Void Line/Transaction, Refund/Return, Price Override, Max. Line and Total Discount %.",
+      "expect": "A cashier group without Manager Privileges and a manager group with it.",
+      "closes": "VPOS-65",
+      "fields": [
+        [
+          "cashier",
+          "Cashier group: code / max line disc. %"
+        ],
+        [
+          "manager",
+          "Manager group: code / max line disc. %"
+        ]
+      ]
+    },
+    {
+      "id": "S13",
+      "title": "Staff and PINs",
+      "do": "Vantage Staff: a record for every tester (Store No. 5001, a group), then Set PIN on each. Then try to give a second person a PIN already in use.",
+      "expect": "Every tester has a PIN. The duplicate is refused, naming who holds it.",
+      "closes": "VPOS-66",
+      "fields": [
+        [
+          "staff",
+          "Staff IDs created"
+        ],
+        [
+          "duplicate",
+          "Message for the duplicate PIN"
+        ]
+      ]
+    },
+    {
+      "id": "S14",
+      "title": "Cash movement reasons",
+      "do": "Vantage Cash Movement Reasons: at least two payout reasons, each with a G/L Account No.",
+      "expect": "Reasons with an account. The till offers only these for a payout.",
       "closes": "VPOS-33",
-      "fields": [["reasons", "Reason codes and their G/L accounts"]] },
-
-    { "id": "P12", "title": "Fiscal device, fiscal day, TIN and VAT number",
-      "do": "Confirm each till has an FDMS device and that its fiscal day is open (the till never opens one). Store 5001: TIN and VAT Registration No.",
-      "expect": "Device and open day per till. TIN and VAT no. filled, so they print on the slip.",
-      "closes": "VPOS-31, G20 (VPOS-109)",
-      "fields": [["devices", "Device id per till"], ["day", "Fiscal day no. open"], ["tin", "TIN set? (yes/no)"], ["vatno", "VAT no. set? (yes/no)"]] },
-
-    { "id": "P13", "title": "Statement numbers have room",
-      "do": "Vantage POS Posting Setup → Statement Nos. → No. Series lines.",
-      "expect": "A line covering today, with room between Last No. Used and Ending No.",
-      "fields": [["series", "Series code"], ["last", "Last No. Used"], ["ending", "Ending No."]] },
-
-    { "id": "P14", "title": "Card terminal reachable",
-      "do": "Check PayBridge is running for each till with a card terminal, and where the till is pointed at it.",
-      "expect": "Reachable. The hardware profile's EFT endpoint was blank on 24 Sep.",
-      "fields": [["tills", "Tills with a card terminal"], ["endpoint", "Endpoint set? (yes/no)"]] },
-
-    { "id": "P15", "title": "A ZWG rate dated today",
-      "do": "Currency Exchange Rates for ZWG.",
-      "expect": "A rate starting today, synced to the tills.",
-      "closes": "VPOS-71",
-      "fields": [["date", "Starting date"], ["rate", "Rate (ZWG per USD)"]] },
-
-    { "id": "P16", "title": "Posting accounts and limits",
-      "do": "Vantage POS Posting Setup: Rounding Account, Cash Difference Acc., Max. Rounding Amount, Max. Cash Difference. Inventory Setup: Prevent Negative Inventory. If live stock is on, the job queue entry for codeunit 50802.",
-      "expect": "Accounts set. Max. Rounding Amount small, so a wrong tender cannot hide in the Rounding Account.",
-      "fields": [["rounding_acc", "Rounding Account"], ["cashdiff_acc", "Cash Difference Acc."], ["max_rounding", "Max. Rounding Amount"], ["max_cashdiff", "Max. Cash Difference"], ["neg_inv", "Prevent Negative Inventory"], ["jobq", "Live-stock job queue entry (yes/no/n.a.)"]] },
-
-    { "id": "T1", "title": "Sign on and count the float",
+      "fields": [
+        [
+          "reasons",
+          "Reason codes and G/L accounts"
+        ]
+      ]
+    },
+    {
+      "id": "S15",
+      "title": "Quick keys",
+      "do": "Vantage POS Menu Profiles > the store's profile: pages and buttons, including a No Sale and a Reprint function key if the store wants them. Set it on the store card.",
+      "expect": "The F7 grid on the till shows the buttons. Without buttons, No Sale and Reprint of the last receipt are unreachable except from the post-sale screen.",
+      "fields": [
+        [
+          "profile",
+          "Menu profile"
+        ],
+        [
+          "buttons",
+          "Buttons added"
+        ]
+      ]
+    },
+    {
+      "id": "S16",
+      "title": "Scales and embedded barcodes (if scales are used)",
+      "do": "Vantage Embedded Barcodes: the store's label rule. Open Vantage Embedded Barcode Test and decode a real label. Tick Vantage Scale Item on the weighed items.",
+      "expect": "The test page decodes the label to the right item, weight or price. Skip with 'Not run' if the store has no scales.",
+      "closes": "VPOS-36",
+      "fields": [
+        [
+          "rule",
+          "Rule code / prefix / length"
+        ],
+        [
+          "test_label",
+          "Label tested and what it decoded to"
+        ],
+        [
+          "scale_items",
+          "Items flagged as scale items"
+        ]
+      ]
+    },
+    {
+      "id": "S17",
+      "title": "Posting setup",
+      "do": "Vantage POS Posting Setup: journal template and batch, Item journal template and batch, Statement Nos. (with room on its No. Series), Rounding Account No., Cash Difference Acc., Max. Rounding Amount, Max. Cash Difference, Local Currency Code, Store Dimension Code, Safe Account No.",
+      "expect": "All filled. Max. Rounding Amount small, so a wrong tender cannot hide in the Rounding Account.",
+      "closes": "VPOS-35",
+      "fields": [
+        [
+          "statement_nos",
+          "Statement Nos. / last used / ending"
+        ],
+        [
+          "rounding",
+          "Rounding Account / Max. Rounding Amount"
+        ],
+        [
+          "cash_diff",
+          "Cash Difference Acc. / Max. Cash Difference"
+        ],
+        [
+          "lcy",
+          "Local Currency Code"
+        ]
+      ]
+    },
+    {
+      "id": "S18",
+      "title": "Account customers and live stock",
+      "do": "Customers for the on-account steps: not blocked, with a credit limit. If Live Stock Posting is on: a Job Queue Entry for codeunit 50802. Inventory Setup: Prevent Negative Inventory.",
+      "expect": "At least one account customer with a limit. The job queue entry exists and is Ready (or Live Stock Posting is off).",
+      "closes": "VPOS-27, VPOS-32",
+      "fields": [
+        [
+          "customer",
+          "Customer no. / credit limit"
+        ],
+        [
+          "jobq",
+          "Job queue entry (yes/no/n.a.)"
+        ],
+        [
+          "neg_inv",
+          "Prevent Negative Inventory"
+        ]
+      ]
+    },
+    {
+      "id": "S19",
+      "title": "Install the till",
+      "do": "Run the till MSI on the tester's machine. Start Vantage from the Start menu or desktop shortcut (not from a repo folder).",
+      "expect": "It installs and starts. With no settings file yet, it asks for this till's lane.properties.",
+      "fields": [
+        [
+          "version",
+          "Till version (F9, bottom right)"
+        ],
+        [
+          "machine",
+          "Machine"
+        ],
+        [
+          "asked",
+          "Asked for lane.properties? (yes/no)"
+        ]
+      ]
+    },
+    {
+      "id": "S20",
+      "title": "Give the till its lane.properties",
+      "do": "Answer Yes and pick this till's lane.properties (store 5001, its terminal, gateway URL and key, FDMS device id and key).",
+      "expect": "It says where it copied the file (.vantage) and the till opens as 5001/<terminal> in the title bar, with no restart.",
+      "fields": [
+        [
+          "copied_to",
+          "Where it was copied"
+        ],
+        [
+          "title",
+          "Title bar"
+        ]
+      ]
+    },
+    {
+      "id": "S21",
+      "title": "The till refuses the wrong file",
+      "do": "On a till with no settings (or from Lane setup > Load from a lane.properties file), pick the gateway's application.yml.",
+      "expect": "Refused by name: it names no gateway and no store. Nothing is written.",
+      "fields": [
+        [
+          "message",
+          "Message shown"
+        ]
+      ]
+    },
+    {
+      "id": "S22",
+      "title": "Lane setup and the logo",
+      "do": "Sign-in screen > Lane setup > setup code or a manager PIN. Check the values, set Receipt logo and Screen logo to the store's PNG, Save.",
+      "expect": "It saves (the file path is shown). The header and the basket watermark change to the store's logo straight away, not TV Sales & Home's.",
+      "closes": "VPOS-118",
+      "fields": [
+        [
+          "saved_to",
+          "Saved to"
+        ],
+        [
+          "logo",
+          "Logo shown after saving"
+        ]
+      ]
+    },
+    {
+      "id": "S23",
+      "title": "First sync",
+      "do": "Open F9 Status · Sync and wait for the channels to settle.",
+      "expect": "All synced, with the catalogue, prices, staff, tenders and currencies down and nothing failed. Signing in shows every tester's name.",
+      "closes": "VPOS-85",
+      "fields": [
+        [
+          "status",
+          "Status headline"
+        ],
+        [
+          "channels",
+          "Any channel not green"
+        ],
+        [
+          "staff",
+          "Staff shown on sign-in"
+        ]
+      ]
+    },
+    {
+      "id": "S24",
+      "title": "Printer and drawer",
+      "do": "F9 > Printers on this till: pick the receipt printer, Print test slip, then Open drawer.",
+      "expect": "The slip prints with the store's logo and the drawer opens.",
+      "fields": [
+        [
+          "printer",
+          "Printer chosen"
+        ],
+        [
+          "slip",
+          "Test slip printed? (yes/no)"
+        ],
+        [
+          "drawer",
+          "Drawer opened? (yes/no)"
+        ]
+      ]
+    },
+    {
+      "id": "S25",
+      "title": "Fiscal device and card terminal ready",
+      "do": "F9: read the ZIMRA and card lines. Confirm in the FDMS portal that this till's device has an open fiscal day, and that PayBridge is running for tills with a card terminal.",
+      "expect": "ZIMRA configured with this till's device id; fiscal day open. Card link up where a terminal is fitted.",
+      "closes": "VPOS-31",
+      "fields": [
+        [
+          "device",
+          "FDMS device id"
+        ],
+        [
+          "day",
+          "Fiscal day no. open"
+        ],
+        [
+          "card",
+          "Card link status"
+        ]
+      ]
+    },
+    {
+      "id": "T1",
+      "title": "Sign on and count the float",
       "do": "Sign in as a cashier and count the float for each cash currency the till asks for.",
       "expect": "The till asks for USD and ZWG, and opens a shift.",
-      "closes": "VPOS-33", "expect_fail": "G4 (VPOS-93): asks for ZWG only",
-      "fields": [["shift", "Shift no."], ["asked", "Currencies asked for"], ["usd_float", "USD float"], ["zwg_float", "ZWG float"]] },
-
-    { "id": "T2", "title": "Reopen without a Z",
+      "closes": "VPOS-33",
+      "expect_fail": "G4 (VPOS-93): asks for ZWG only",
+      "fields": [
+        [
+          "shift",
+          "Shift no."
+        ],
+        [
+          "asked",
+          "Currencies asked for"
+        ],
+        [
+          "usd_float",
+          "USD float"
+        ],
+        [
+          "zwg_float",
+          "ZWG float"
+        ]
+      ]
+    },
+    {
+      "id": "T2",
+      "title": "Reopen without a Z",
       "do": "Close the app and reopen it without cutting a Z.",
       "expect": "The same shift resumes with the float you counted, not a fresh prompt.",
       "closes": "VPOS-33",
-      "fields": [["shift", "Shift no. after reopening"], ["float", "Float shown"]] },
-
-    { "id": "T3", "title": "A manager's own PIN at a supervisor gate",
+      "fields": [
+        [
+          "shift",
+          "Shift no. after reopening"
+        ],
+        [
+          "float",
+          "Float shown"
+        ]
+      ]
+    },
+    {
+      "id": "T3",
+      "title": "A manager's own PIN at a supervisor gate",
       "do": "As the cashier, trigger a supervisor gate (a line discount over 10%, or End of day). Enter the manager's PIN.",
       "expect": "Accepted, and the approval names the manager.",
       "closes": "VPOS-65",
-      "fields": [["gate", "Gate used"], ["approver", "Approver shown"]] },
-
-    { "id": "T4", "title": "Till price matches the shelf",
-      "do": "Scan the two items from P2.",
+      "fields": [
+        [
+          "gate",
+          "Gate used"
+        ],
+        [
+          "approver",
+          "Approver shown"
+        ]
+      ]
+    },
+    {
+      "id": "T4",
+      "title": "Till price matches the shelf",
+      "do": "Scan the two items with a known shelf price (note the shelf price and the BC Unit Price first).",
       "expect": "The till charges exactly the shelf price.",
       "closes": "U1 (VPOS-112)",
-      "fields": [["item1_till", "Item 1 till price (incl. VAT)"], ["item1_vat", "Item 1 VAT"], ["item2_till", "Item 2 till price (incl. VAT)"], ["item2_vat", "Item 2 VAT"]] },
-
-    { "id": "T5", "title": "Key an item number; find one by name",
+      "fields": [
+        [
+          "item1",
+          "Item 1 no."
+        ],
+        [
+          "item1_shelf",
+          "Item 1 shelf price"
+        ],
+        [
+          "item1_till",
+          "Item 1 till price (incl. VAT)"
+        ],
+        [
+          "item2",
+          "Item 2 no."
+        ],
+        [
+          "item2_shelf",
+          "Item 2 shelf price"
+        ],
+        [
+          "item2_till",
+          "Item 2 till price (incl. VAT)"
+        ]
+      ]
+    },
+    {
+      "id": "T5",
+      "title": "Key an item number; find one by name",
       "do": "Key an item number with no barcode. Then press F3 and find an item by part of its name.",
       "expect": "Both ring.",
-      "fields": [["keyed", "Item keyed"], ["searched", "Item found with F3"]] },
-
-    { "id": "T6", "title": "VAT and band per kind of item",
+      "fields": [
+        [
+          "keyed",
+          "Item keyed"
+        ],
+        [
+          "searched",
+          "Item found with F3"
+        ]
+      ]
+    },
+    {
+      "id": "T6",
+      "title": "VAT and band per kind of item",
       "do": "Ring one standard-rated, one zero-rated, one exempt and one blank-VAT-group item. Look each up in BC's VAT Posting Setup. After tendering, read the bands on the fiscal slip.",
       "expect": "Each line's VAT % equals BC's setup for that item, and the slip declares the right band.",
       "closes": "G7 (VPOS-96)",
-      "fields": [["std", "Standard: item, BC %, till %, band on slip"], ["zero", "Zero-rated: item, BC %, till %, band"], ["exempt", "Exempt: item, BC %, till %, band"], ["blank", "Blank group: item, BC %, till %, band"]] },
-
-    { "id": "T7", "title": "A zero-priced item",
+      "fields": [
+        [
+          "std",
+          "Standard: item, BC %, till %, band on slip"
+        ],
+        [
+          "zero",
+          "Zero-rated: item, BC %, till %, band"
+        ],
+        [
+          "exempt",
+          "Exempt: item, BC %, till %, band"
+        ],
+        [
+          "blank",
+          "Blank group: item, BC %, till %, band"
+        ]
+      ]
+    },
+    {
+      "id": "T7",
+      "title": "A zero-priced item",
       "do": "Ring an item whose price in BC is 0.",
       "expect": "The till asks for a price or refuses it.",
       "expect_fail": "G11 (VPOS-100): rings at 0.00",
-      "fields": [["item", "Item no."], ["what", "What happened"]] },
-
-    { "id": "T8", "title": "Void a line, then a whole sale",
+      "fields": [
+        [
+          "item",
+          "Item no."
+        ],
+        [
+          "what",
+          "What happened"
+        ]
+      ]
+    },
+    {
+      "id": "T8",
+      "title": "Void a line, then a whole sale",
       "do": "Void one line of a sale and finish it. Then ring another sale and void it whole (F11 → 5).",
       "expect": "Both voids are recorded and reach BC (check in B1).",
       "expect_fail": "G8 (VPOS-97): a voided sale leaves no record",
-      "fields": [["line_void_receipt", "Receipt with the voided line"], ["void_receipt", "Receipt no. of the voided sale"]] },
-
-    { "id": "T9", "title": "Park and recall",
+      "fields": [
+        [
+          "line_void_receipt",
+          "Receipt with the voided line"
+        ],
+        [
+          "void_receipt",
+          "Receipt no. of the voided sale"
+        ]
+      ]
+    },
+    {
+      "id": "T9",
+      "title": "Park and recall",
       "do": "Park a basket (F8), ring and finish another sale, then recall the parked one and finish it.",
       "expect": "The parked basket comes back whole.",
-      "fields": [["parked", "Parked receipt no."], ["recalled_total", "Total after recall"]] },
-
-    { "id": "T10", "title": "Sign out mid-basket",
+      "fields": [
+        [
+          "parked",
+          "Parked receipt no."
+        ],
+        [
+          "recalled_total",
+          "Total after recall"
+        ]
+      ]
+    },
+    {
+      "id": "T10",
+      "title": "Sign out mid-basket",
       "do": "A manager rings two items and signs out without finishing. A cashier signs in.",
       "expect": "The cashier gets a fresh basket under their own name, without the manager's rights.",
       "expect_fail": "G10 (VPOS-99): keeps the basket and the previous person's rights",
-      "fields": [["staff_on_receipt", "Staff on the next receipt"], ["basket", "What the cashier saw"]] },
-
-    { "id": "T11", "title": "Line discount at 10%, then 15%",
+      "fields": [
+        [
+          "staff_on_receipt",
+          "Staff on the next receipt"
+        ],
+        [
+          "basket",
+          "What the cashier saw"
+        ]
+      ]
+    },
+    {
+      "id": "T11",
+      "title": "Line discount at 10%, then 15%",
       "do": "As a cashier, give 10% on a line, then 15% on another.",
       "expect": "10% is taken; 15% asks for a supervisor.",
-      "fields": [["ten", "Line amount after 10%"], ["fifteen", "What 15% did"]] },
-
-    { "id": "T12", "title": "USD cash, exact",
+      "fields": [
+        [
+          "ten",
+          "Line amount after 10%"
+        ],
+        [
+          "fifteen",
+          "What 15% did"
+        ]
+      ]
+    },
+    {
+      "id": "T12",
+      "title": "USD cash, exact",
       "do": "Ring a sale and tender exact USD cash.",
       "expect": "The sale closes and the drawer opens.",
-      "fields": [["receipt", "Receipt no."], ["gross", "Gross"], ["drawer", "Drawer opened? (yes/no)"]] },
-
-    { "id": "T13", "title": "USD cash with change",
+      "fields": [
+        [
+          "receipt",
+          "Receipt no."
+        ],
+        [
+          "gross",
+          "Gross"
+        ],
+        [
+          "drawer",
+          "Drawer opened? (yes/no)"
+        ]
+      ]
+    },
+    {
+      "id": "T13",
+      "title": "USD cash with change",
       "do": "Ring a sale and hand over more than the total in USD.",
       "expect": "Change is shown and paid = gross + rounding + change.",
-      "fields": [["receipt", "Receipt no."], ["gross", "Gross"], ["paid", "Paid"], ["rounding", "Rounding"], ["change", "Change"]] },
-
-    { "id": "T14", "title": "Settle a USD sale in ZWG notes",
+      "fields": [
+        [
+          "receipt",
+          "Receipt no."
+        ],
+        [
+          "gross",
+          "Gross"
+        ],
+        [
+          "paid",
+          "Paid"
+        ],
+        [
+          "rounding",
+          "Rounding"
+        ],
+        [
+          "change",
+          "Change"
+        ]
+      ]
+    },
+    {
+      "id": "T14",
+      "title": "Settle a USD sale in ZWG notes",
       "do": "Open tendering on a USD sale. Before pressing, read the Cash ZWG key. Then settle it entirely in ZWG.",
       "expect": "The key shows the rate and the ZWG balance. The sale closes and the receipt names the tender by its description.",
       "closes": "VPOS-79, VPOS-80, VPOS-82, VPOS-83",
-      "fields": [["receipt", "Receipt no."], ["rate", "Rate on the key"], ["usd", "USD gross"], ["zwg", "ZWG paid"], ["tender_name", "Tender name on the receipt"]] },
-
-    { "id": "T15", "title": "An unpayable ZWG amount",
+      "fields": [
+        [
+          "receipt",
+          "Receipt no."
+        ],
+        [
+          "rate",
+          "Rate on the key"
+        ],
+        [
+          "usd",
+          "USD gross"
+        ],
+        [
+          "zwg",
+          "ZWG paid"
+        ],
+        [
+          "tender_name",
+          "Tender name on the receipt"
+        ]
+      ]
+    },
+    {
+      "id": "T15",
+      "title": "An unpayable ZWG amount",
       "do": "Key a ZWG amount that is not a multiple of 0.10.",
       "expect": "Refused, naming the denomination.",
       "closes": "VPOS-81",
-      "fields": [["keyed", "Amount keyed"], ["message", "Message shown"]] },
-
-    { "id": "T16", "title": "Change from the ZWG drawer",
+      "fields": [
+        [
+          "keyed",
+          "Amount keyed"
+        ],
+        [
+          "message",
+          "Message shown"
+        ]
+      ]
+    },
+    {
+      "id": "T16",
+      "title": "Change from the ZWG drawer",
       "do": "Overtender a sale in ZWG notes.",
       "expect": "Change comes back in ZWG, rounded to 0.10, and paid = gross + rounding + change.",
-      "fields": [["receipt", "Receipt no."], ["zwg_paid", "ZWG paid"], ["change", "Change"], ["rounding", "Rounding"]] },
-
-    { "id": "T17", "title": "Split USD cash and ZWG notes",
+      "fields": [
+        [
+          "receipt",
+          "Receipt no."
+        ],
+        [
+          "zwg_paid",
+          "ZWG paid"
+        ],
+        [
+          "change",
+          "Change"
+        ],
+        [
+          "rounding",
+          "Rounding"
+        ]
+      ]
+    },
+    {
+      "id": "T17",
+      "title": "Split USD cash and ZWG notes",
       "do": "Settle one sale partly in USD cash and partly in ZWG notes.",
       "expect": "The sale closes. The fiscal receipt is in the sale's currency.",
       "expect_fail": "G13 (VPOS-102): fiscalises in ZWG",
-      "fields": [["receipt", "Receipt no."], ["usd_leg", "USD leg"], ["zwg_leg", "ZWG leg"], ["fiscal_currency", "Currency on the fiscal receipt"]] },
-
-    { "id": "T18", "title": "Card for an odd total",
+      "fields": [
+        [
+          "receipt",
+          "Receipt no."
+        ],
+        [
+          "usd_leg",
+          "USD leg"
+        ],
+        [
+          "zwg_leg",
+          "ZWG leg"
+        ],
+        [
+          "fiscal_currency",
+          "Currency on the fiscal receipt"
+        ]
+      ]
+    },
+    {
+      "id": "T18",
+      "title": "Card for an odd total",
       "do": "Ring a basket whose total is not a coin multiple and pay by card.",
       "expect": "The card is charged the exact gross.",
-      "fields": [["receipt", "Receipt no."], ["gross", "Gross"], ["charged", "Amount on the card slip"]] },
-
-    { "id": "T19", "title": "A card decline",
+      "fields": [
+        [
+          "receipt",
+          "Receipt no."
+        ],
+        [
+          "gross",
+          "Gross"
+        ],
+        [
+          "charged",
+          "Amount on the card slip"
+        ]
+      ]
+    },
+    {
+      "id": "T19",
+      "title": "A card decline",
       "do": "Force a decline (wrong PIN).",
       "expect": "The till offers another tender and takes nothing. Do not retry a decline.",
-      "fields": [["response", "What the till showed"]] },
-
-    { "id": "T20", "title": "EcoCash through the terminal",
+      "fields": [
+        [
+          "response",
+          "What the till showed"
+        ]
+      ]
+    },
+    {
+      "id": "T20",
+      "title": "EcoCash through the terminal",
       "do": "Take an EcoCash payment through the card terminal.",
       "expect": "Declared to ZIMRA as MobileWallet, not Card (read the fiscal record or ask Wyne to).",
-      "fields": [["receipt", "Receipt no."], ["money_type", "Money type declared"]] },
-
-    { "id": "T21", "title": "A customer on account",
+      "fields": [
+        [
+          "receipt",
+          "Receipt no."
+        ],
+        [
+          "money_type",
+          "Money type declared"
+        ]
+      ]
+    },
+    {
+      "id": "T21",
+      "title": "A customer on account",
       "do": "F2, attach an account customer, tender on account inside the limit. Then try an amount over the limit.",
       "expect": "Accepted inside the limit; refused over it with the reason.",
       "closes": "VPOS-27, VPOS-56",
-      "fields": [["customer", "Customer no."], ["receipt", "Receipt no."], ["amount", "Amount"], ["refusal", "Refusal text over the limit"]] },
-
-    { "id": "T22", "title": "The fiscal slip, online and offline",
+      "fields": [
+        [
+          "customer",
+          "Customer no."
+        ],
+        [
+          "receipt",
+          "Receipt no."
+        ],
+        [
+          "amount",
+          "Amount"
+        ],
+        [
+          "refusal",
+          "Refusal text over the limit"
+        ]
+      ]
+    },
+    {
+      "id": "T22",
+      "title": "The fiscal slip, online and offline",
       "do": "Read a printed slip and scan its QR with a phone. Then pull the network, make one sale, and plug it back in.",
       "expect": "Fiscal block, QR that verifies, VAT by band. Offline, the slip says fiscalisation is pending and the stamps arrive once the network is back.",
       "closes": "VPOS-31",
-      "fields": [["day", "Fiscal day"], ["global", "Global no."], ["code", "Verification code"], ["qr", "QR verified? (yes/no)"], ["offline_receipt", "Offline receipt no."], ["offline_stamped", "Stamped after reconnecting? (yes/no)"]] },
-
-    { "id": "T23", "title": "Returns",
+      "fields": [
+        [
+          "day",
+          "Fiscal day"
+        ],
+        [
+          "global",
+          "Global no."
+        ],
+        [
+          "code",
+          "Verification code"
+        ],
+        [
+          "qr",
+          "QR verified? (yes/no)"
+        ],
+        [
+          "offline_receipt",
+          "Offline receipt no."
+        ],
+        [
+          "offline_stamped",
+          "Stamped after reconnecting? (yes/no)"
+        ]
+      ]
+    },
+    {
+      "id": "T23",
+      "title": "Returns",
       "do": "Refund a whole receipt. Return 2 of 6 on a line, then the rest. Return a receipt from another till. Try to refund a sale that has not been fiscalised yet.",
       "expect": "Credit notes of 20 characters or fewer, summing to the original to the cent. The last one is refused.",
-      "closes": "VPOS-57, VPOS-39", "expect_fail": "G12 (VPOS-101): an unfiscalised sale is not refused",
-      "fields": [["whole", "Whole return: CN no., amount"], ["partials", "Partials: CN nos., amounts"], ["other_till", "Other till: CN no."], ["unfiscalised", "Unfiscalised refund: what happened"]] },
-
-    { "id": "T24", "title": "Pickup, safe drop, float add, payout",
+      "closes": "VPOS-57, VPOS-39",
+      "expect_fail": "G12 (VPOS-101): an unfiscalised sale is not refused",
+      "fields": [
+        [
+          "whole",
+          "Whole return: CN no., amount"
+        ],
+        [
+          "partials",
+          "Partials: CN nos., amounts"
+        ],
+        [
+          "other_till",
+          "Other till: CN no."
+        ],
+        [
+          "unfiscalised",
+          "Unfiscalised refund: what happened"
+        ]
+      ]
+    },
+    {
+      "id": "T24",
+      "title": "Pickup, safe drop, float add, payout",
       "do": "Manager menu → 7 with an empty basket. Do one of each, including a payout with reason Other.",
       "expect": "A slip each, and the drawer's expected cash moves by exactly that amount.",
       "closes": "VPOS-33, VPOS-73",
-      "fields": [["pickup", "Pickup amount"], ["drop", "Safe drop amount"], ["float_add", "Float add amount"], ["payout", "Payout amount and reason"]] },
-
-    { "id": "T25", "title": "A basket across a Z",
+      "fields": [
+        [
+          "pickup",
+          "Pickup amount"
+        ],
+        [
+          "drop",
+          "Safe drop amount"
+        ],
+        [
+          "float_add",
+          "Float add amount"
+        ],
+        [
+          "payout",
+          "Payout amount and reason"
+        ]
+      ]
+    },
+    {
+      "id": "T25",
+      "title": "A basket across a Z",
       "do": "Open a basket on one till. Cut the Z, open a new shift, then tender the basket.",
       "expect": "The sale lands on the shift it was tendered on.",
       "closes": "VPOS-64",
-      "fields": [["receipt", "Receipt no."], ["shift", "Shift it landed on"]] },
-
-    { "id": "T26", "title": "Declare and cut the Z",
+      "fields": [
+        [
+          "receipt",
+          "Receipt no."
+        ],
+        [
+          "shift",
+          "Shift it landed on"
+        ]
+      ]
+    },
+    {
+      "id": "T26",
+      "title": "Declare and cut the Z",
       "do": "End of day: count each cash drawer and declare, then cut the Z. Compare the screen with the paper.",
       "expect": "A USD and a ZWG drawer, each with expected, counted and variance. Screen and paper agree.",
-      "closes": "VPOS-35, VPOS-68", "expect_fail": "G3 (VPOS-92): the USD drawer is not counted",
-      "fields": [["z", "Z / shift no."], ["usd", "USD: expected / counted / variance"], ["zwg", "ZWG: expected / counted / variance"], ["gross", "Z gross"], ["vat", "VAT by band"]] },
-
-    { "id": "B1", "title": "Every transaction arrived",
+      "closes": "VPOS-35, VPOS-68",
+      "expect_fail": "G3 (VPOS-92): the USD drawer is not counted",
+      "fields": [
+        [
+          "z",
+          "Z / shift no."
+        ],
+        [
+          "usd",
+          "USD: expected / counted / variance"
+        ],
+        [
+          "zwg",
+          "ZWG: expected / counted / variance"
+        ],
+        [
+          "gross",
+          "Z gross"
+        ],
+        [
+          "vat",
+          "VAT by band"
+        ]
+      ]
+    },
+    {
+      "id": "B1",
+      "title": "Every transaction arrived",
       "do": "Count the transaction headers in BC for the shifts tested and compare with the till.",
       "expect": "One per sale, none missing, voids present.",
       "closes": "VPOS-31",
-      "fields": [["till_count", "Count on the till"], ["bc_count", "Count in BC"], ["missing", "Missing receipt nos."]] },
-
-    { "id": "B2", "title": "Fiscal stamps on every header",
+      "fields": [
+        [
+          "till_count",
+          "Count on the till"
+        ],
+        [
+          "bc_count",
+          "Count in BC"
+        ],
+        [
+          "missing",
+          "Missing receipt nos."
+        ]
+      ]
+    },
+    {
+      "id": "B2",
+      "title": "Fiscal stamps on every header",
       "do": "Check the fiscal fields on each transaction header.",
       "expect": "All present.",
       "closes": "VPOS-31",
-      "fields": [["missing", "Headers without stamps"]] },
-
-    { "id": "B3", "title": "Cash movements and the Z report arrived",
+      "fields": [
+        [
+          "missing",
+          "Headers without stamps"
+        ]
+      ]
+    },
+    {
+      "id": "B3",
+      "title": "Cash movements and the Z report arrived",
       "do": "Vantage Cash Movements and Vantage Z Reports for the shifts tested.",
       "expect": "One Z per shift, with a ladder line per currency.",
       "closes": "VPOS-33, VPOS-35",
-      "fields": [["z", "Z report no."], ["currencies", "Currencies on the ladder"], ["movements", "Cash movements found"]] },
-
-    { "id": "B4", "title": "Calculate the statement",
+      "fields": [
+        [
+          "z",
+          "Z report no."
+        ],
+        [
+          "currencies",
+          "Currencies on the ladder"
+        ],
+        [
+          "movements",
+          "Cash movements found"
+        ]
+      ]
+    },
+    {
+      "id": "B4",
+      "title": "Calculate the statement",
       "do": "Create and calculate a statement for the store and date.",
       "expect": "Each tender line in its own currency at the amount taken.",
       "expect_fail": "G1 (VPOS-90): a ZWG-notes tender reads the USD amount as ZWG",
-      "fields": [["statement", "Statement no."], ["zwg_line", "ZWG tender line amount"]] },
-
-    { "id": "B5", "title": "Post the statement",
+      "fields": [
+        [
+          "statement",
+          "Statement no."
+        ],
+        [
+          "zwg_line",
+          "ZWG tender line amount"
+        ]
+      ]
+    },
+    {
+      "id": "B5",
+      "title": "Post the statement",
       "do": "Post it.",
       "expect": "It balances.",
       "closes": "VPOS-35",
-      "fields": [["revenue", "Revenue"], ["vat", "Output VAT"], ["tenders", "Tenders"], ["cash_diff", "Cash difference"]] },
-
-    { "id": "B6", "title": "Drawer difference per currency",
+      "fields": [
+        [
+          "revenue",
+          "Revenue"
+        ],
+        [
+          "vat",
+          "Output VAT"
+        ],
+        [
+          "tenders",
+          "Tenders"
+        ],
+        [
+          "cash_diff",
+          "Cash difference"
+        ]
+      ]
+    },
+    {
+      "id": "B6",
+      "title": "Drawer difference per currency",
       "do": "Vantage Statement Drawer for the statement.",
       "expect": "One difference per drawer and currency, matching the Z.",
       "closes": "VPOS-33",
-      "fields": [["usd", "USD difference"], ["zwg", "ZWG difference"]] },
-
-    { "id": "B7", "title": "Item ledger",
+      "fields": [
+        [
+          "usd",
+          "USD difference"
+        ],
+        [
+          "zwg",
+          "ZWG difference"
+        ]
+      ]
+    },
+    {
+      "id": "B7",
+      "title": "Item ledger",
       "do": "Item Ledger Entries for the day's sales.",
       "expect": "Sale quantities posted.",
       "closes": "VPOS-32",
-      "fields": [["entries", "Entries found"]] },
-
-    { "id": "B8", "title": "Account sale invoice and oldest-first payment",
+      "fields": [
+        [
+          "entries",
+          "Entries found"
+        ]
+      ]
+    },
+    {
+      "id": "B8",
+      "title": "Account sale invoice and oldest-first payment",
       "do": "Find the invoice for T21's account sale. Pay part of the customer's balance and check what it applied to.",
       "expect": "The sale is its own invoice; the payment applies to the oldest entry first.",
       "closes": "VPOS-56, VPOS-40",
-      "fields": [["invoice", "Invoice no."], ["applied", "Entry the payment applied to"]] },
-
-    { "id": "B9", "title": "Post the same day again",
+      "fields": [
+        [
+          "invoice",
+          "Invoice no."
+        ],
+        [
+          "applied",
+          "Entry the payment applied to"
+        ]
+      ]
+    },
+    {
+      "id": "B9",
+      "title": "Post the same day again",
       "do": "Try to post the day again.",
       "expect": "Nothing moves.",
-      "fields": [["before", "G/L entries before"], ["after", "G/L entries after"]] },
-
-    { "id": "B10", "title": "Roll the statement back",
+      "fields": [
+        [
+          "before",
+          "G/L entries before"
+        ],
+        [
+          "after",
+          "G/L entries after"
+        ]
+      ]
+    },
+    {
+      "id": "B10",
+      "title": "Roll the statement back",
       "do": "Roll back the posted statement.",
       "expect": "A net-zero reversal, and the transactions back to Open.",
-      "fields": [["doc", "Reversal document no."], ["open", "Transactions back to Open? (yes/no)"]] }
+      "fields": [
+        [
+          "doc",
+          "Reversal document no."
+        ],
+        [
+          "open",
+          "Transactions back to Open? (yes/no)"
+        ]
+      ]
+    }
   ]
 }
